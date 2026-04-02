@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --color-paper: #f9f9f9;
+  --color-ink: #1a1a1a;
+  --color-dark-paper: #0a0a0a;
+  --color-dark-ink: #d4d4d8;
+}
+
+:root {
+  --bg: var(--color-paper);
+  --fg: var(--color-ink);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: var(--color-dark-paper);
+    --fg: var(--color-dark-ink);
+  }
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  @apply antialiased transition-colors duration-500;
+  font-family: -apple-system, BlinkMacSystemFont, "Geist Variable", sans-serif;
+  margin: 0;
+}
+
+textarea::-webkit-scrollbar {
+  display: none;
+}
