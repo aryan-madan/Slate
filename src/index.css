@@ -124,3 +124,32 @@ textarea::-webkit-scrollbar {
     opacity: 1;
   }
 }
+
+.status-bar {
+  transition: opacity 0.3s var(--curve), transform 0.3s var(--curve);
+  pointer-events: none;
+}
+
+.status-visible {
+  opacity: 0.4;
+  transform: translateY(0);
+}
+
+.status-hidden {
+  opacity: 0;
+  transform: translateY(-5px);
+}
+
+.status-bar:hover {
+  opacity: 1;
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
