@@ -294,10 +294,21 @@
 }
 
 .char-fade {
-  display: inline; 
-  white-space: pre-wrap; 
-  animation: charBloom 250ms var(--curve) forwards;
-  pointer-events: none;
+  display: inline-block;
+  opacity: 0;
+  animation: char-entry 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.char-fade.stable {
+  animation: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+@keyframes char-entry {
+  from { opacity: 0; transform: translateY(2px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 @keyframes charBloom {
