@@ -17,3 +17,6 @@ npm run dev
 ```
 
 Or, go to the [deployed link](https://slate-silk.vercel.app/) to experience Slate!
+
+## AI Usage
+I used AI to fix bugs, and do some parts of the css.
