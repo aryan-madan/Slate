@@ -1,17 +1,62 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useLocal } from './Hook';
-import { IconPlus, IconX } from '@tabler/icons-react';
+import {
+  IconPlus,
+  IconX,
+  IconH1,
+  IconH2,
+  IconList,
+  IconListNumbers,
+  IconSquareCheck,
+  IconQuote,
+  IconCode,
+  IconMinus,
+  IconAlignLeft
+} from '@tabler/icons-react';
+
+const BLOCK_HTML = {
+  text: '<div class="text-block">&nbsp;</div>',
+  todo: '<div class="todo-item"><input type="checkbox" class="todo-checkbox" contenteditable="false"><span class="todo-text">&nbsp;</span></div>',
+  h1: '<div class="heading-1">&nbsp;</div>',
+  h2: '<div class="heading-2">&nbsp;</div>',
+  bullet: '<div class="bullet-item"><span class="bullet-dot">•</span><span class="bullet-text">&nbsp;</span></div>',
+  numbered: '<div class="numbered-item"><span class="numbered-marker"></span><span class="numbered-text">&nbsp;</span></div>',
+  quote: '<div class="quote-block">&nbsp;</div>',
+  code: '<div class="code-block">&nbsp;</div>',
+  divider: '<hr class="divider"><div class="text-block">&nbsp;</div>'
+};
+
+const SLASH_ITEMS = [
+  { id: 'text', label: 'text', keywords: ['text', 'paragraph', 'p'], icon: IconAlignLeft, html: BLOCK_HTML.text },
+  { id: 'todo', label: 'to-do', keywords: ['todo', 'checkbox', 'check', 'task'], icon: IconSquareCheck, html: BLOCK_HTML.todo },
+  { id: 'h1', label: 'heading 1', keywords: ['h1', 'heading', 'title'], icon: IconH1, html: BLOCK_HTML.h1 },
+  { id: 'h2', label: 'heading 2', keywords: ['h2', 'heading', 'subtitle'], icon: IconH2, html: BLOCK_HTML.h2 },
+  { id: 'bullet', label: 'bulleted list', keywords: ['bullet', 'list', 'ul'], icon: IconList, html: BLOCK_HTML.bullet },
+  { id: 'numbered', label: 'numbered list', keywords: ['number', 'numbered', 'ol', 'list'], icon: IconListNumbers, html: BLOCK_HTML.numbered },
+  { id: 'quote', label: 'quote', keywords: ['quote', 'blockquote'], icon: IconQuote, html: BLOCK_HTML.quote },
+  { id: 'code', label: 'code', keywords: ['code', 'snippet'], icon: IconCode, html: BLOCK_HTML.code },
+  { id: 'divider', label: 'divider', keywords: ['divider', 'line', 'hr'], icon: IconMinus, html: BLOCK_HTML.divider }
+];
+
+const EMPTY_NOTE_HTML = BLOCK_HTML.text;
 
 export default function App() {
   const [items, setItems] = useLocal('items', [{ id: 1, body: '' }]);
-  const [active, setActive] = window.localStorage.getItem('active') 
-    ? useState(JSON.parse(window.localStorage.getItem('active'))) 
-    : useState(1);
-  
+  const [active, setActive] = useState(() => {
+    const saved = window.localStorage.getItem('active');
+    return saved ? JSON.parse(saved) : 1;
+  });
+
   const [show, setShow] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [cursorPos, setCursorPos] = useState({ x: 0, y: 0 });
-  
+  const [cursorHeight, setCursorHeight] = useState(24);
+
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashPos, setSlashPos] = useState({ x: 0, y: 0 });
+
   const editorRef = useRef(null);
   const syncTimeout = useRef(null);
   const typingTimeout = useRef(null);
@@ -23,6 +68,12 @@ export default function App() {
     window.localStorage.setItem('active', JSON.stringify(active));
   }, [active]);
 
+  useEffect(() => {
+    if (!items.find(i => i.id === active) && items.length > 0) {
+      setActive(items[0].id);
+    }
+  }, [items, active]);
+
   const getCleanText = (html) => {
     if (!html) return "";
     const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -31,13 +82,32 @@ export default function App() {
 
   const wordCount = getCleanText(cur.body).trim() ? getCleanText(cur.body).trim().split(/\s+/).length : 0;
 
+  const filteredSlashItems = useMemo(() => {
+    if (!slashQuery) return SLASH_ITEMS;
+    const q = slashQuery.toLowerCase();
+    return SLASH_ITEMS.filter(item =>
+      item.label.toLowerCase().includes(q) || item.keywords.some(k => k.includes(q))
+    );
+  }, [slashQuery]);
+
+  const closeSlashMenu = useCallback(() => {
+    setSlashOpen(false);
+    setSlashQuery('');
+    setSlashIndex(0);
+  }, []);
+
   const updateCursorPos = useCallback(() => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0 || !editorRef.current) return;
-    
-    const range = selection.getRangeAt(0).cloneRange();
+
+    const rawRange = selection.getRangeAt(0);
+    if (!editorRef.current.contains(rawRange.startContainer) || !editorRef.current.contains(rawRange.endContainer)) {
+      return;
+    }
+
+    const range = rawRange.cloneRange();
     let rect;
-    
+
     if (range.collapsed) {
       const dummy = document.createElement("span");
       dummy.textContent = "\u200b";
@@ -59,85 +129,312 @@ export default function App() {
         x: rect.left - editorRect.left,
         y: rect.top - editorRect.top
       });
+
+      if (rect.height > 0) {
+        setCursorHeight(rect.height);
+      }
+
+      setSlashPos({
+        x: rect.left - editorRect.left,
+        y: rect.top - editorRect.top + rect.height + 6
+      });
     }
   }, []);
 
+  const placeCursor = (el, atStart) => {
+    if (!el) return;
+    const range = document.createRange();
+    const sel = window.getSelection();
+    range.selectNodeContents(el);
+    range.collapse(!!atStart);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  };
+
+  const getCurrentBlock = (node) => {
+    if (!node || !editorRef.current) return null;
+    let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (el === editorRef.current) return null;
+    while (el && el.parentElement !== editorRef.current) {
+      el = el.parentElement;
+    }
+    return el;
+  };
+
+  const buildNodes = (html) => {
+    const temp = document.createElement('div');
+    temp.innerHTML = html;
+    return Array.from(temp.childNodes);
+  };
+
   useEffect(() => {
     if (editorRef.current) {
-      if (editorRef.current.innerHTML !== cur.body) {
-        editorRef.current.innerHTML = cur.body;
+      const content = cur.body && cur.body.trim() !== '' ? cur.body : EMPTY_NOTE_HTML;
+      if (editorRef.current.innerHTML !== content) {
+        editorRef.current.innerHTML = content;
       }
-      editorRef.current.querySelectorAll('.char-fade').forEach(el => el.classList.add('stable'));
-      
+
       editorRef.current.focus();
-      
-      const range = document.createRange();
-      const sel = window.getSelection();
-      range.selectNodeContents(editorRef.current);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
-      
+
+      const lastChild = editorRef.current.lastElementChild;
+      const target = lastChild ? (lastChild.querySelector('.todo-text, .bullet-text, .numbered-text') || lastChild) : editorRef.current;
+      placeCursor(target, false);
+
+      closeSlashMenu();
       requestAnimationFrame(updateCursorPos);
     }
-  }, [active, updateCursorPos]);
+  }, [active, updateCursorPos, closeSlashMenu]);
+
+  const checkSlashCommand = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      closeSlashMenu();
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed) {
+      closeSlashMenu();
+      return;
+    }
+
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) {
+      closeSlashMenu();
+      return;
+    }
+
+    const textBefore = node.textContent.slice(0, range.startOffset);
+    const match = textBefore.match(/\/([a-zA-Z0-9]*)$/);
+
+    if (match) {
+      setSlashQuery(match[1]);
+      setSlashIndex(0);
+      setSlashOpen(true);
+    } else {
+      closeSlashMenu();
+    }
+  }, [closeSlashMenu]);
 
   const edit = () => {
     if (!editorRef.current) return;
     const val = editorRef.current.innerHTML;
-    
+
     setIsTyping(true);
     if (typingTimeout.current) clearTimeout(typingTimeout.current);
     typingTimeout.current = setTimeout(() => setIsTyping(false), 800);
-    
+
     if (syncTimeout.current) clearTimeout(syncTimeout.current);
     syncTimeout.current = setTimeout(() => {
       setItems(prev => prev.map(i => i.id === active ? { ...i, body: val } : i));
-    }, 1000); 
+    }, 1000);
 
     updateCursorPos();
+    checkSlashCommand();
+  };
+
+  const applySlashCommand = (item) => {
+    if (!item || !editorRef.current) return;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const node = range.startContainer;
+
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      const cursorOffset = range.startOffset;
+      const beforeCursor = text.slice(0, cursorOffset);
+      const slashIdx = beforeCursor.lastIndexOf('/');
+      if (slashIdx !== -1) {
+        node.textContent = text.slice(0, slashIdx) + text.slice(cursorOffset);
+      }
+    }
+
+    const block = getCurrentBlock(node);
+    const remainingText = block ? getCleanText(block.innerHTML).trim() : '';
+    const newNodes = buildNodes(item.html);
+
+    if (block && block.parentElement === editorRef.current) {
+      block.replaceWith(...newNodes);
+    } else {
+      editorRef.current.append(...newNodes);
+    }
+
+    const target = newNodes[newNodes.length - 1];
+    const textHolder = target.querySelector
+      ? (target.querySelector('.todo-text, .bullet-text, .numbered-text') || target)
+      : target;
+
+    if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
+      textHolder.textContent = remainingText || '\u00A0';
+      placeCursor(textHolder, false);
+    }
+
+    closeSlashMenu();
+    edit();
+    editorRef.current.focus();
+    requestAnimationFrame(updateCursorPos);
+  };
+
+  const handleEnterKey = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    const block = getCurrentBlock(range.startContainer);
+    if (!block) return;
+
+    const cls = block.className || '';
+    const textSpan = block.querySelector('.todo-text, .bullet-text, .numbered-text');
+    const isEmpty = textSpan
+      ? getCleanText(textSpan.innerHTML).trim() === ''
+      : getCleanText(block.innerHTML).trim() === '';
+
+    let newNodes;
+
+    if (/todo-item|bullet-item|numbered-item/.test(cls) && isEmpty) {
+      newNodes = buildNodes(BLOCK_HTML.text);
+      block.replaceWith(...newNodes);
+      newNodes[0].textContent = '\u00A0';
+      placeCursor(newNodes[0], false);
+    } else if (cls.includes('todo-item')) {
+      newNodes = buildNodes(BLOCK_HTML.todo);
+      block.after(...newNodes);
+      placeCursor(newNodes[0].querySelector('.todo-text'), false);
+    } else if (cls.includes('bullet-item')) {
+      newNodes = buildNodes(BLOCK_HTML.bullet);
+      block.after(...newNodes);
+      placeCursor(newNodes[0].querySelector('.bullet-text'), false);
+    } else if (cls.includes('numbered-item')) {
+      newNodes = buildNodes(BLOCK_HTML.numbered);
+      block.after(...newNodes);
+      placeCursor(newNodes[0].querySelector('.numbered-text'), false);
+    } else {
+      newNodes = buildNodes(BLOCK_HTML.text);
+      block.after(...newNodes);
+      placeCursor(newNodes[0], false);
+    }
+
+    edit();
+    requestAnimationFrame(updateCursorPos);
+  };
+
+  const handleBackspaceAtStart = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed || range.startOffset !== 0) return false;
+
+    const block = getCurrentBlock(range.startContainer);
+    if (!block) return false;
+
+    const cls = block.className || '';
+    const isSpecial = /todo-item|bullet-item|numbered-item|heading-1|heading-2|quote-block|code-block/.test(cls);
+    if (!isSpecial) return false;
+    if (block === editorRef.current.firstElementChild && editorRef.current.children.length === 1) {
+      const textSpan = block.querySelector('.todo-text, .bullet-text, .numbered-text');
+      if (textSpan && getCleanText(textSpan.innerHTML).trim() !== '') return false;
+      if (!textSpan && getCleanText(block.innerHTML).trim() !== '') return false;
+    }
+
+    const textSpan = block.querySelector('.todo-text, .bullet-text, .numbered-text');
+    const content = textSpan ? textSpan.innerHTML : block.innerHTML;
+    const newNodes = buildNodes(BLOCK_HTML.text);
+    newNodes[0].innerHTML = content && content.trim() !== '' ? content : '&nbsp;';
+    block.replaceWith(...newNodes);
+    placeCursor(newNodes[0], true);
+    edit();
+    requestAnimationFrame(updateCursorPos);
+    return true;
+  };
+
+  const applySlashCommandRef = useRef(applySlashCommand);
+  applySlashCommandRef.current = applySlashCommand;
+
+  const handleEditorClick = (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains('todo-checkbox')) {
+      const checkbox = e.target;
+      if (checkbox.checked) {
+        checkbox.setAttribute('checked', '');
+      } else {
+        checkbox.removeAttribute('checked');
+      }
+
+      const textSpan = checkbox.parentElement ? checkbox.parentElement.querySelector('.todo-text') : null;
+      if (textSpan) {
+        placeCursor(textSpan, false);
+      }
+      edit();
+      requestAnimationFrame(updateCursorPos);
+    }
   };
 
   const handleKeyDown = (e) => {
     const isMod = e.metaKey || e.ctrlKey;
-    
-    if (e.key === 'Enter') {
-      editorRef.current.querySelectorAll('.char-fade:not(.stable)').forEach(el => el.classList.add('stable'));
-      setTimeout(() => {
-        edit();
-        updateCursorPos();
-      }, 10);
+
+    if (slashOpen) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex(i => (i + 1) % Math.max(filteredSlashItems.length, 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex(i => (i - 1 + Math.max(filteredSlashItems.length, 1)) % Math.max(filteredSlashItems.length, 1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (filteredSlashItems.length > 0) {
+          applySlashCommand(filteredSlashItems[slashIndex]);
+        } else {
+          closeSlashMenu();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSlashMenu();
+        return;
+      }
+      if (e.key === ' ') {
+        closeSlashMenu();
+      }
+    }
+
+    if (e.key === 'Enter' && !slashOpen) {
+      e.preventDefault();
+      handleEnterKey();
       return;
     }
 
-    if (e.key.length === 1 && !isMod) {
-      e.preventDefault();
-      const char = e.key === ' ' ? '&nbsp;' : e.key;
-      const html = `<span class="char-fade">${char}</span>`;
-      document.execCommand('insertHTML', false, html);
-      
-      const lastChar = editorRef.current.querySelector('.char-fade:not(.stable)');
-      if (lastChar) setTimeout(() => lastChar.classList.add('stable'), 400);
-      
-      edit();
+    if (e.key === 'Backspace' && !slashOpen) {
+      const handled = handleBackspaceAtStart();
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
     }
-    
+
     if (e.key === 'Tab') {
       e.preventDefault();
       document.execCommand('insertHTML', false, '&nbsp;&nbsp;');
       edit();
+      return;
     }
 
     if (isMod && e.key.toLowerCase() === 'b') {
       e.preventDefault();
       document.execCommand('bold', false);
       edit();
+      return;
     }
 
     if (isMod && e.key.toLowerCase() === 'i') {
       e.preventDefault();
       document.execCommand('italic', false);
       edit();
+      return;
     }
 
     setTimeout(updateCursorPos, 0);
@@ -159,7 +456,7 @@ export default function App() {
 
       <div onMouseEnter={() => setShow(true)} className="fixed inset-y-0 left-0 w-20 z-40" />
 
-      <aside 
+      <aside
         onMouseLeave={() => setShow(false)}
         className={`fixed inset-y-0 left-0 w-80 pt-[104px] flex flex-col bg-[var(--sidebar)] transition-all duration-500 z-30 ${show ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0'}`}
         style={{ transitionTimingFunction: curve }}
@@ -173,7 +470,7 @@ export default function App() {
             <IconPlus size={18} stroke={1.5} />
             <span className="lowercase tracking-tight font-medium">new slate</span>
           </button>
-          
+
           <nav className="flex flex-col w-full overflow-y-auto no-scrollbar pb-10">
             {items.map((i) => (
               <div key={i.id} className="group relative w-full">
@@ -201,15 +498,15 @@ export default function App() {
       <main className={`relative flex-1 bg-[var(--bg)] transition-all duration-500 h-full ${show ? 'translate-x-80 rounded-l-[24px]' : 'translate-x-0 rounded-l-0'}`} style={{ transitionTimingFunction: curve }}>
         <div className="h-full w-full flex justify-center pt-32 px-12 pb-40 overflow-y-auto no-scrollbar scroll-smooth">
           <div className="w-full max-w-2xl relative">
-            <div 
-              className="custom-cursor absolute w-[1.5px] bg-[var(--fg)] opacity-40 pointer-events-none z-10" 
-              style={{ 
-                left: cursorPos.x, 
+            <div
+              className="custom-cursor absolute w-[1.5px] bg-[var(--fg)] opacity-40 pointer-events-none z-10"
+              style={{
+                left: cursorPos.x,
                 top: cursorPos.y,
-                height: '1.2em',
+                height: cursorHeight,
                 transform: 'translateY(15%)',
-                transition: `left 80ms ${curve}, top 80ms ${curve}`
-              }} 
+                transition: `left 80ms ${curve}, top 80ms ${curve}, height 80ms ${curve}`
+              }}
             />
             <div
               ref={editorRef}
@@ -218,10 +515,39 @@ export default function App() {
               onKeyDown={handleKeyDown}
               onMouseUp={updateCursorPos}
               onKeyUp={updateCursorPos}
+              onClick={handleEditorClick}
               className="text-base-style w-full min-h-[60vh] outline-none text-[var(--fg)] caret-transparent select-text"
               spellCheck="false"
-              data-placeholder="start writing..."
+              data-placeholder="start writing, or type / for commands..."
             />
+
+            {slashOpen && (
+              <div
+                className="slash-menu"
+                style={{ left: slashPos.x, top: slashPos.y }}
+              >
+                {filteredSlashItems.length === 0 && (
+                  <div className="slash-menu-empty">no matches</div>
+                )}
+                {filteredSlashItems.map((item, idx) => {
+                  const Icon = item.icon;
+                  return (
+                    <button
+                      key={item.id}
+                      className={`slash-menu-item ${idx === slashIndex ? 'active' : ''}`}
+                      onMouseEnter={() => setSlashIndex(idx)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        applySlashCommandRef.current(item);
+                      }}
+                    >
+                      <Icon size={16} stroke={1.5} />
+                      <span className="lowercase tracking-tight">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       </main>
