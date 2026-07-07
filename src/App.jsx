@@ -122,7 +122,7 @@ export default function App() {
       rect = range.getBoundingClientRect();
     }
 
-    if (rect) {
+    if (rect && !(rect.top === 0 && rect.left === 0 && rect.width === 0 && rect.height === 0)) {
       const editorRect = editorRef.current.getBoundingClientRect();
 
       setCursorPos({
@@ -141,11 +141,31 @@ export default function App() {
     }
   }, []);
 
+  useEffect(() => {
+    const resync = () => {
+      requestAnimationFrame(() => {
+        requestAnimationFrame(updateCursorPos);
+      });
+    };
+    document.addEventListener('visibilitychange', resync);
+    window.addEventListener('focus', resync);
+    return () => {
+      document.removeEventListener('visibilitychange', resync);
+      window.removeEventListener('focus', resync);
+    };
+  }, [updateCursorPos]);
+
   const placeCursor = (el, atStart) => {
     if (!el) return;
+    const isEmpty = getCleanText(el.innerHTML).trim() === '';
     const range = document.createRange();
     const sel = window.getSelection();
     range.selectNodeContents(el);
+    if (isEmpty) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return;
+    }
     range.collapse(!!atStart);
     sel.removeAllRanges();
     sel.addRange(range);
