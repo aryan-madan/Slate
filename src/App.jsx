@@ -40,6 +40,27 @@ const SLASH_ITEMS = [
 
 const EMPTY_NOTE_HTML = BLOCK_HTML.text;
 
+const MARKDOWN_MAP = {
+  h1: BLOCK_HTML.h1,
+  h2: BLOCK_HTML.h2,
+  bullet: BLOCK_HTML.bullet,
+  numbered: BLOCK_HTML.numbered,
+  todo: BLOCK_HTML.todo,
+  quote: BLOCK_HTML.quote,
+  code: BLOCK_HTML.code
+};
+
+const matchMarkdownTrigger = (cleaned) => {
+  if (/^#$/.test(cleaned)) return 'h1';
+  if (/^##$/.test(cleaned)) return 'h2';
+  if (/^[-*]$/.test(cleaned)) return 'bullet';
+  if (/^\d+\.$/.test(cleaned)) return 'numbered';
+  if (/^\[\]$/.test(cleaned)) return 'todo';
+  if (/^>$/.test(cleaned)) return 'quote';
+  if (/^```$/.test(cleaned)) return 'code';
+  return null;
+};
+
 export default function App() {
   const [items, setItems] = useLocal('items', [{ id: 1, body: '' }]);
   const [active, setActive] = useState(() => {
@@ -157,24 +178,30 @@ export default function App() {
 
   const placeCursor = (el, atStart) => {
     if (!el) return;
-    const isEmpty = getCleanText(el.innerHTML).trim() === '';
     const range = document.createRange();
     const sel = window.getSelection();
     range.selectNodeContents(el);
-    if (isEmpty) {
-      sel.removeAllRanges();
-      sel.addRange(range);
-      return;
-    }
     range.collapse(!!atStart);
     sel.removeAllRanges();
     sel.addRange(range);
   };
 
-  const getCurrentBlock = (node) => {
+  const getCurrentBlock = (node, offset) => {
     if (!node || !editorRef.current) return null;
+
+    if (node === editorRef.current) {
+      const children = editorRef.current.children;
+      if (!children || children.length === 0) return null;
+      const idx = typeof offset === 'number'
+        ? Math.max(0, Math.min(offset, children.length - 1))
+        : children.length - 1;
+      return children[idx] || children[children.length - 1];
+    }
+
     let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (!el) return null;
     if (el === editorRef.current) return null;
+
     while (el && el.parentElement !== editorRef.current) {
       el = el.parentElement;
     }
@@ -271,7 +298,7 @@ export default function App() {
       }
     }
 
-    const block = getCurrentBlock(node);
+    const block = getCurrentBlock(node, range.startOffset);
     const remainingText = block ? getCleanText(block.innerHTML).trim() : '';
     const newNodes = buildNodes(item.html);
 
@@ -297,15 +324,75 @@ export default function App() {
     requestAnimationFrame(updateCursorPos);
   };
 
+  const checkMarkdownShortcut = (e) => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return false;
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed) return false;
+
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return false;
+
+    const block = getCurrentBlock(node, range.startOffset);
+    if (!block || !block.classList.contains('text-block')) return false;
+
+    const firstChild = block.firstChild;
+    if (firstChild !== node) return false;
+
+    const textBefore = node.textContent.slice(0, range.startOffset);
+    const cleaned = textBefore.replace(/\u00A0/g, '').trim();
+    const matchedType = matchMarkdownTrigger(cleaned);
+    if (!matchedType) return false;
+
+    e.preventDefault();
+
+    const remaining = node.textContent.slice(range.startOffset);
+    const newNodes = buildNodes(MARKDOWN_MAP[matchedType]);
+    block.replaceWith(...newNodes);
+
+    const target = newNodes[newNodes.length - 1];
+    const textHolder = target.querySelector
+      ? (target.querySelector('.todo-text, .bullet-text, .numbered-text') || target)
+      : target;
+
+    if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
+      textHolder.textContent = remaining || '\u00A0';
+      placeCursor(textHolder, false);
+    }
+
+    edit();
+    requestAnimationFrame(updateCursorPos);
+    return true;
+  };
+
   const handleEnterKey = () => {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
     const range = selection.getRangeAt(0);
-    const block = getCurrentBlock(range.startContainer);
+    let block = getCurrentBlock(range.startContainer, range.startOffset);
+
+    if (!block) {
+      block = editorRef.current.lastElementChild;
+    }
     if (!block) return;
 
     const cls = block.className || '';
-    const textSpan = block.querySelector('.todo-text, .bullet-text, .numbered-text');
+
+    if (cls.includes('code-block')) {
+      const br = document.createElement('br');
+      range.deleteContents();
+      range.insertNode(br);
+      const afterRange = document.createRange();
+      afterRange.setStartAfter(br);
+      afterRange.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(afterRange);
+      edit();
+      requestAnimationFrame(updateCursorPos);
+      return;
+    }
+
+    const textSpan = block.querySelector ? block.querySelector('.todo-text, .bullet-text, .numbered-text') : null;
     const isEmpty = textSpan
       ? getCleanText(textSpan.innerHTML).trim() === ''
       : getCleanText(block.innerHTML).trim() === '';
@@ -345,7 +432,7 @@ export default function App() {
     const range = selection.getRangeAt(0);
     if (!range.collapsed || range.startOffset !== 0) return false;
 
-    const block = getCurrentBlock(range.startContainer);
+    const block = getCurrentBlock(range.startContainer, range.startOffset);
     if (!block) return false;
 
     const cls = block.className || '';
@@ -391,6 +478,11 @@ export default function App() {
 
   const handleKeyDown = (e) => {
     const isMod = e.metaKey || e.ctrlKey;
+
+    if (e.key === ' ' && !slashOpen) {
+      const handled = checkMarkdownShortcut(e);
+      if (handled) return;
+    }
 
     if (slashOpen) {
       if (e.key === 'ArrowDown') {
@@ -466,7 +558,7 @@ export default function App() {
         <div className="w-4 h-4 rounded-[4px] border border-[var(--fg)]" />
       </div>
 
-      <div className="fixed top-12 right-12 z-50">
+      <div className="fixed top-12 right-12 z-50 flex items-center gap-4">
         <div className={`status-bar ${isTyping ? 'status-hidden' : 'status-visible'}`}>
           <div className="text-[13px] font-light tracking-tight text-[var(--fg)] opacity-40 lowercase">
             {wordCount} {wordCount === 1 ? 'word' : 'words'}

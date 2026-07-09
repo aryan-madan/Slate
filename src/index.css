@@ -37,6 +37,16 @@ body {
   overflow: hidden;
 }
 
+::selection {
+  background-color: color-mix(in srgb, var(--fg) 18%, transparent);
+  color: var(--fg);
+}
+
+::-moz-selection {
+  background-color: color-mix(in srgb, var(--fg) 18%, transparent);
+  color: var(--fg);
+}
+
 .slate-item {
   transition:
     max-height 0.4s var(--curve),
@@ -114,6 +124,7 @@ textarea::-webkit-scrollbar {
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+
   .no-scrollbar {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -149,7 +160,7 @@ textarea::-webkit-scrollbar {
     opacity 200ms ease;
 }
 
-.delete-wrapper > div {
+.delete-wrapper>div {
   min-height: 0;
   transition: transform 250ms var(--curve), filter 200ms ease;
 }
@@ -160,7 +171,7 @@ textarea::-webkit-scrollbar {
   margin-bottom: 0;
 }
 
-.delete-wrapper.deleting > div {
+.delete-wrapper.deleting>div {
   transform: translateX(-20px);
   filter: blur(8px);
 }
@@ -172,6 +183,7 @@ textarea::-webkit-scrollbar {
     transform: translateX(-10px);
     filter: blur(12px);
   }
+
   100% {
     max-height: 60px;
     opacity: 1;
@@ -187,11 +199,13 @@ textarea::-webkit-scrollbar {
   pointer-events: none;
 }
 
-.text-base-style b, .text-base-style strong {
+.text-base-style b,
+.text-base-style strong {
   font-weight: 700 !important;
 }
 
-.text-base-style i, .text-base-style em {
+.text-base-style i,
+.text-base-style em {
   font-style: italic !important;
 }
 
@@ -213,7 +227,8 @@ textarea::-webkit-scrollbar {
   counter-reset: numbered-list;
 }
 
-[contenteditable] b, [contenteditable] strong {
+[contenteditable] b,
+[contenteditable] strong {
   font-weight: 600;
 }
 
@@ -222,8 +237,15 @@ textarea::-webkit-scrollbar {
 }
 
 @keyframes characterIn {
-  0% { filter: blur(3px); opacity: 0.7; }
-  100% { filter: blur(0px); opacity: 1; }
+  0% {
+    filter: blur(3px);
+    opacity: 0.7;
+  }
+
+  100% {
+    filter: blur(0px);
+    opacity: 1;
+  }
 }
 
 .char-fade {
@@ -240,13 +262,29 @@ textarea::-webkit-scrollbar {
 }
 
 @keyframes char-entry {
-  from { opacity: 0; transform: translateY(2px); filter: blur(2px); }
-  to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+    filter: blur(2px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
 }
 
 @keyframes charBloom {
-  0% { filter: blur(4px); opacity: 0; }
-  100% { filter: blur(0px); opacity: 1; }
+  0% {
+    filter: blur(4px);
+    opacity: 0;
+  }
+
+  100% {
+    filter: blur(0px);
+    opacity: 1;
+  }
 }
 
 .truncate-title {
@@ -278,6 +316,7 @@ textarea::-webkit-scrollbar {
     transform: translateY(-4px) scale(0.98);
     filter: blur(2px);
   }
+
   100% {
     opacity: 1;
     transform: translateY(0) scale(1);
@@ -515,6 +554,7 @@ textarea::-webkit-scrollbar {
     opacity: 0;
     transform: rotate(45deg) scale(0.4);
   }
+
   100% {
     opacity: 1;
     transform: rotate(45deg) scale(1);
@@ -527,7 +567,7 @@ textarea::-webkit-scrollbar {
   transition: opacity 0.2s var(--curve);
 }
 
-.todo-checkbox:checked ~ .todo-text {
+.todo-checkbox:checked~.todo-text {
   text-decoration: line-through;
   text-decoration-thickness: 1px;
   opacity: 0.4;

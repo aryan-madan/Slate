@@ -5,6 +5,9 @@ A minimalist writing app focused on stripping the unnecessary parts of a text ed
 
 I designed Slate with a 'less is more' philosophy, with over-engineered animations to make writing a more enjoyable experience.
 
+Slate now includes a command palette that you can access by typing '/'.
+You get access to a variety of markdown styles such as headings, code snippets, lists, to-do's, etc.
+
 ```bash
 # Clone the repository
 git clone [https://github.com/yourusername/slate.git](https://github.com/yourusername/slate.git)
