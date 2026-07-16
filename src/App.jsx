@@ -232,6 +232,20 @@ export default function App() {
     return Array.from(temp.childNodes);
   };
 
+  const resolveBlock = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    let block = getCurrentBlock(range.startContainer, range.startOffset);
+    if (!block) block = editorRef.current.lastElementChild;
+    if (!block) {
+      const seedNodes = buildNodes(BLOCK_HTML.text);
+      editorRef.current.append(...seedNodes);
+      block = seedNodes[0];
+    }
+    return block;
+  };
+
   useEffect(() => {
     if (editorRef.current) {
       const content = cur.body && cur.body.trim() !== '' ? cur.body : EMPTY_NOTE_HTML;
@@ -301,30 +315,15 @@ export default function App() {
   const applySlashCommand = (item) => {
     if (!item || !editorRef.current) return;
 
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-    const range = selection.getRangeAt(0);
-    const node = range.startContainer;
+    const block = resolveBlock();
+    if (!block) return;
 
-    if (node.nodeType === Node.TEXT_NODE) {
-      const text = node.textContent;
-      const cursorOffset = range.startOffset;
-      const beforeCursor = text.slice(0, cursorOffset);
-      const slashIdx = beforeCursor.lastIndexOf('/');
-      if (slashIdx !== -1) {
-        node.textContent = text.slice(0, slashIdx) + text.slice(cursorOffset);
-      }
-    }
+    const rawText = getCleanText(block.innerHTML);
+    const slashIdx = rawText.lastIndexOf('/');
+    const remainingText = (slashIdx !== -1 ? rawText.slice(0, slashIdx) : rawText).trim();
 
-    const block = getCurrentBlock(node, range.startOffset);
-    const remainingText = block ? getCleanText(block.innerHTML).trim() : '';
     const newNodes = buildNodes(item.html);
-
-    if (block && block.parentElement === editorRef.current) {
-      block.replaceWith(...newNodes);
-    } else {
-      editorRef.current.append(...newNodes);
-    }
+    block.replaceWith(...newNodes);
 
     const target = newNodes[newNodes.length - 1];
     const textHolder = target.querySelector
@@ -389,10 +388,16 @@ export default function App() {
     const range = selection.getRangeAt(0);
     let block = getCurrentBlock(range.startContainer, range.startOffset);
 
+    if (!block) block = editorRef.current.lastElementChild;
+
     if (!block) {
-      block = editorRef.current.lastElementChild;
+      const seedNodes = buildNodes(BLOCK_HTML.text);
+      editorRef.current.append(...seedNodes);
+      placeCursor(seedNodes[0], false);
+      edit();
+      requestAnimationFrame(updateCursorPos);
+      return;
     }
-    if (!block) return;
 
     const cls = block.className || '';
     const textSpan = block.querySelector ? block.querySelector('.todo-text, .bullet-text, .numbered-text') : null;
@@ -501,7 +506,7 @@ export default function App() {
       if (e.key === 'Enter') {
         e.preventDefault();
         if (filteredSlashItems.length > 0) {
-          applySlashCommand(filteredSlashItems[slashIndex]);
+          applySlashCommand(filteredSlashItems[slashIndex] || filteredSlashItems[0]);
         } else {
           closeSlashMenu();
         }
