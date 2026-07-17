@@ -22,7 +22,7 @@ export default function App() {
   const [show, setShow] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
 
-  const { theme, toggleTheme } = useTheme();
+  const { cycleTheme } = useTheme();
 
   const safeItems = Array.isArray(items) ? items : [];
   const cur = safeItems.find(i => i.id === active) || safeItems[0] || { id: active, body: '' };
@@ -64,7 +64,7 @@ export default function App() {
 
   useShortcuts({
     onSave: () => setSaveOpen(true),
-    onTheme: toggleTheme
+    onTheme: cycleTheme
   });
 
   return (
@@ -74,11 +74,8 @@ export default function App() {
       </div>
 
       <Topbar
-        onExport={handleExport}
         wordCount={wordCount}
         isTyping={isTyping}
-        theme={theme}
-        onToggleTheme={toggleTheme}
       />
 
       <Sidebar

@@ -190,8 +190,38 @@ export default function useEditor(cur, active, setItems) {
     }
   }, [closeSlashMenu]);
 
+  const cleanupPlaceholder = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+    const range = selection.getRangeAt(0);
+    if (!range.collapsed) return;
+
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE) return;
+
+    const text = node.textContent;
+    if (!text.includes('\u00A0')) return;
+
+    const withoutPlaceholder = text.replace(/\u00A0/g, '');
+    if (withoutPlaceholder.length === 0) return;
+
+    const offset = range.startOffset;
+    const cleanedBefore = text.slice(0, offset).replace(/\u00A0/g, '');
+    const cleanedAfter = text.slice(offset).replace(/\u00A0/g, '');
+
+    node.textContent = cleanedBefore + cleanedAfter;
+
+    const newOffset = cleanedBefore.length;
+    const newRange = document.createRange();
+    newRange.setStart(node, newOffset);
+    newRange.setEnd(node, newOffset);
+    selection.removeAllRanges();
+    selection.addRange(newRange);
+  };
+
   const edit = () => {
     if (!editorRef.current) return;
+    cleanupPlaceholder();
     const val = editorRef.current.innerHTML;
 
     setIsTyping(true);
@@ -226,7 +256,7 @@ export default function useEditor(cur, active, setItems) {
       : target;
 
     if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
-      textHolder.textContent = remainingText || '\u00A0';
+      textHolder.textContent = remainingText;
       placeCursor(textHolder, false);
     }
 
@@ -268,7 +298,7 @@ export default function useEditor(cur, active, setItems) {
       : target;
 
     if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
-      textHolder.textContent = remaining || '\u00A0';
+      textHolder.textContent = remaining;
       placeCursor(textHolder, false);
     }
 
@@ -276,6 +306,19 @@ export default function useEditor(cur, active, setItems) {
     requestAnimationFrame(updateCursorPos);
     return true;
   };
+
+  const templateForClass = (cls) => {
+    if (cls.includes('todo-item')) return BLOCK_HTML.todo;
+    if (cls.includes('bullet-item')) return BLOCK_HTML.bullet;
+    if (cls.includes('numbered-item')) return BLOCK_HTML.numbered;
+    return BLOCK_HTML.text;
+  };
+
+  const holderOf = (node) => (
+    node.querySelector
+      ? (node.querySelector('.todo-text, .bullet-text, .numbered-text') || node)
+      : node
+  );
 
   const handleEnterKey = () => {
     const selection = window.getSelection();
@@ -295,35 +338,42 @@ export default function useEditor(cur, active, setItems) {
     }
 
     const cls = block.className || '';
-    const textSpan = block.querySelector ? block.querySelector('.todo-text, .bullet-text, .numbered-text') : null;
-    const isEmpty = textSpan
-      ? getCleanText(textSpan.innerHTML).trim() === ''
-      : getCleanText(block.innerHTML).trim() === '';
+    const currentHolder = holderOf(block);
 
-    let newNodes;
+    const preRange = document.createRange();
+    preRange.selectNodeContents(currentHolder);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const beforeText = preRange.toString().replace(/\u00A0/g, '');
+
+    const postRange = document.createRange();
+    postRange.selectNodeContents(currentHolder);
+    postRange.setStart(range.startContainer, range.startOffset);
+    const afterText = postRange.toString().replace(/\u00A0/g, '');
+
+    const isEmpty = beforeText.trim() === '' && afterText.trim() === '';
 
     if (/todo-item|bullet-item|numbered-item/.test(cls) && isEmpty) {
-      newNodes = buildNodes(BLOCK_HTML.text);
-      block.replaceWith(...newNodes);
-      newNodes[0].textContent = '\u00A0';
-      placeCursor(newNodes[0], false);
-    } else if (cls.includes('todo-item')) {
-      newNodes = buildNodes(BLOCK_HTML.todo);
-      block.after(...newNodes);
-      placeCursor(newNodes[0].querySelector('.todo-text'), false);
-    } else if (cls.includes('bullet-item')) {
-      newNodes = buildNodes(BLOCK_HTML.bullet);
-      block.after(...newNodes);
-      placeCursor(newNodes[0].querySelector('.bullet-text'), false);
-    } else if (cls.includes('numbered-item')) {
-      newNodes = buildNodes(BLOCK_HTML.numbered);
-      block.after(...newNodes);
-      placeCursor(newNodes[0].querySelector('.numbered-text'), false);
-    } else {
-      newNodes = buildNodes(BLOCK_HTML.text);
-      block.after(...newNodes);
-      placeCursor(newNodes[0], false);
+      const emptyNodes = buildNodes(BLOCK_HTML.text);
+      block.replaceWith(...emptyNodes);
+      placeCursor(emptyNodes[0], false);
+      edit();
+      requestAnimationFrame(updateCursorPos);
+      return;
     }
+
+    const currentTemplate = templateForClass(cls);
+    const currentNodes = buildNodes(currentTemplate);
+    const currentTarget = currentNodes[currentNodes.length - 1];
+    holderOf(currentTarget).textContent = beforeText;
+
+    const nextTemplate = templateForClass(cls);
+    const nextNodes = buildNodes(nextTemplate);
+    const nextTarget = nextNodes[nextNodes.length - 1];
+    const nextHolder = holderOf(nextTarget);
+    nextHolder.textContent = afterText;
+
+    block.replaceWith(...currentNodes, ...nextNodes);
+    placeCursor(nextHolder, true);
 
     edit();
     requestAnimationFrame(updateCursorPos);
@@ -338,21 +388,52 @@ export default function useEditor(cur, active, setItems) {
     const block = getCurrentBlock(range.startContainer, range.startOffset);
     if (!block) return false;
 
+    const holder = holderOf(block);
+    if (range.startContainer !== holder && range.startContainer.parentElement !== holder) return false;
+
     const cls = block.className || '';
+    const currentText = getCleanText(holder.innerHTML).replace(/\u00A0/g, '');
     const isSpecial = /todo-item|bullet-item|numbered-item|heading-1|heading-2|quote-block|code-block/.test(cls);
-    if (!isSpecial) return false;
-    if (block === editorRef.current.firstElementChild && editorRef.current.children.length === 1) {
-      const textSpan = block.querySelector('.todo-text, .bullet-text, .numbered-text');
-      if (textSpan && getCleanText(textSpan.innerHTML).trim() !== '') return false;
-      if (!textSpan && getCleanText(block.innerHTML).trim() !== '') return false;
+
+    if (isSpecial) {
+      const newNodes = buildNodes(BLOCK_HTML.text);
+      newNodes[0].textContent = currentText;
+      block.replaceWith(...newNodes);
+      placeCursor(newNodes[0], true);
+      edit();
+      requestAnimationFrame(updateCursorPos);
+      return true;
     }
 
-    const textSpan = block.querySelector('.todo-text, .bullet-text, .numbered-text');
-    const content = textSpan ? textSpan.innerHTML : block.innerHTML;
-    const newNodes = buildNodes(BLOCK_HTML.text);
-    newNodes[0].innerHTML = content && content.trim() !== '' ? content : '&nbsp;';
-    block.replaceWith(...newNodes);
-    placeCursor(newNodes[0], true);
+    const prevBlock = block.previousElementSibling;
+    if (!prevBlock) return false;
+
+    if (prevBlock.tagName === 'HR') {
+      prevBlock.remove();
+      edit();
+      requestAnimationFrame(updateCursorPos);
+      return true;
+    }
+
+    const prevHolder = holderOf(prevBlock);
+    const prevText = getCleanText(prevHolder.innerHTML).replace(/\u00A0/g, '');
+    const mergedText = prevText + currentText;
+
+    prevHolder.textContent = mergedText;
+    block.remove();
+
+    const mergeRange = document.createRange();
+    const targetNode = prevHolder.firstChild;
+    if (targetNode) {
+      mergeRange.setStart(targetNode, prevText.length);
+      mergeRange.setEnd(targetNode, prevText.length);
+    } else {
+      mergeRange.selectNodeContents(prevHolder);
+      mergeRange.collapse(false);
+    }
+    selection.removeAllRanges();
+    selection.addRange(mergeRange);
+
     edit();
     requestAnimationFrame(updateCursorPos);
     return true;
