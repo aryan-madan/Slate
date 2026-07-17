@@ -256,7 +256,7 @@ export default function useEditor(cur, active, setItems) {
       : target;
 
     if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
-      textHolder.textContent = remainingText;
+      setHolderText(textHolder, remainingText);
       placeCursor(textHolder, false);
     }
 
@@ -278,17 +278,22 @@ export default function useEditor(cur, active, setItems) {
     const block = getCurrentBlock(node, range.startOffset);
     if (!block || !block.classList.contains('text-block')) return false;
 
-    const firstChild = block.firstChild;
-    if (firstChild !== node) return false;
+    const preRange = document.createRange();
+    preRange.selectNodeContents(block);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const textBefore = preRange.toString();
 
-    const textBefore = node.textContent.slice(0, range.startOffset);
     const cleaned = textBefore.replace(/\u00A0/g, '').trim();
     const matchedType = matchMarkdownTrigger(cleaned);
     if (!matchedType) return false;
 
     e.preventDefault();
 
-    const remaining = node.textContent.slice(range.startOffset);
+    const postRange = document.createRange();
+    postRange.selectNodeContents(block);
+    postRange.setStart(range.startContainer, range.startOffset);
+    const remaining = postRange.toString().replace(/\u00A0/g, '');
+
     const newNodes = buildNodes(MARKDOWN_MAP[matchedType]);
     block.replaceWith(...newNodes);
 
@@ -298,7 +303,7 @@ export default function useEditor(cur, active, setItems) {
       : target;
 
     if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
-      textHolder.textContent = remaining;
+      setHolderText(textHolder, remaining);
       placeCursor(textHolder, false);
     }
 
@@ -319,6 +324,14 @@ export default function useEditor(cur, active, setItems) {
       ? (node.querySelector('.todo-text, .bullet-text, .numbered-text') || node)
       : node
   );
+
+  const setHolderText = (holder, text) => {
+    if (text) {
+      holder.textContent = text;
+    } else {
+      holder.innerHTML = '<br>';
+    }
+  };
 
   const handleEnterKey = () => {
     const selection = window.getSelection();
@@ -364,13 +377,13 @@ export default function useEditor(cur, active, setItems) {
     const currentTemplate = templateForClass(cls);
     const currentNodes = buildNodes(currentTemplate);
     const currentTarget = currentNodes[currentNodes.length - 1];
-    holderOf(currentTarget).textContent = beforeText;
+    setHolderText(holderOf(currentTarget), beforeText);
 
     const nextTemplate = templateForClass(cls);
     const nextNodes = buildNodes(nextTemplate);
     const nextTarget = nextNodes[nextNodes.length - 1];
     const nextHolder = holderOf(nextTarget);
-    nextHolder.textContent = afterText;
+    setHolderText(nextHolder, afterText);
 
     block.replaceWith(...currentNodes, ...nextNodes);
     placeCursor(nextHolder, true);
@@ -397,7 +410,7 @@ export default function useEditor(cur, active, setItems) {
 
     if (isSpecial) {
       const newNodes = buildNodes(BLOCK_HTML.text);
-      newNodes[0].textContent = currentText;
+      setHolderText(newNodes[0], currentText);
       block.replaceWith(...newNodes);
       placeCursor(newNodes[0], true);
       edit();
@@ -419,7 +432,7 @@ export default function useEditor(cur, active, setItems) {
     const prevText = getCleanText(prevHolder.innerHTML).replace(/\u00A0/g, '');
     const mergedText = prevText + currentText;
 
-    prevHolder.textContent = mergedText;
+    setHolderText(prevHolder, mergedText);
     block.remove();
 
     const mergeRange = document.createRange();
