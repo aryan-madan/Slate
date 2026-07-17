@@ -2,6 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { IconPlus, IconX } from '@tabler/icons-react';
 import { getCleanText } from '../lib/utils';
 
+const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? navigator.userAgent);
+const mod = isMac ? '⌘' : 'ctrl';
+
 export default function Sidebar({ items, active, setActive, setItems, show, setShow }) {
     const [editingId, setEditingId] = useState(null);
     const [draftTitle, setDraftTitle] = useState('');
@@ -40,7 +43,7 @@ export default function Sidebar({ items, active, setActive, setItems, show, setS
                 className={`fixed inset-y-0 left-0 w-80 pt-[104px] flex flex-col bg-[var(--sidebar)] transition-all duration-500 z-30 ${show ? 'translate-x-0 opacity-100' : '-translate-x-full opacity-0'}`}
                 style={{ transitionTimingFunction: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
             >
-                <div className="px-6 flex flex-col gap-1 w-full">
+                <div className="px-6 flex flex-col gap-1 w-full h-full">
                     <button onClick={() => {
                         const newId = Date.now();
                         setItems([...items, { id: newId, body: '' }]);
@@ -50,7 +53,7 @@ export default function Sidebar({ items, active, setActive, setItems, show, setS
                         <span className="lowercase tracking-tight font-medium">new slate</span>
                     </button>
 
-                    <nav className="flex flex-col w-full overflow-y-auto no-scrollbar pb-10">
+                    <nav className="flex flex-col w-full overflow-y-auto no-scrollbar pb-10 flex-1">
                         {(items || []).map((i) => (
                             <div key={i.id} className="group relative w-full">
                                 {editingId === i.id ? (
@@ -90,6 +93,21 @@ export default function Sidebar({ items, active, setActive, setItems, show, setS
                             </div>
                         ))}
                     </nav>
+
+                    <div className="pb-6 pt-3 flex flex-col gap-1.5 text-[11px] opacity-25 select-none">
+                        <div className="flex items-center gap-2">
+                            <span className="tracking-tight font-medium px-1.5 py-0.5 rounded-[4px] bg-white/5 border border-white/10 leading-none">
+                                {mod} s
+                            </span>
+                            <span className="lowercase tracking-tight">save</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <span className="tracking-tight font-medium px-1.5 py-0.5 rounded-[4px] bg-white/5 border border-white/10 leading-none">
+                                {mod} j
+                            </span>
+                            <span className="lowercase tracking-tight">theme</span>
+                        </div>
+                    </div>
                 </div>
             </aside>
         </>

@@ -14,6 +14,13 @@ Type a math expression into Slate and watch it calculate it and show the result.
 
 ![Math](public/gifs/math.gif)
 
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| `Ctrl` / `⌘` + `J` | Toggle theme |
+| `Ctrl` / `⌘` + `S` | Save (Markdown ↔ TXT) |
+
 ### AI Usage
 - stupid editor bugs with formatting
 - css
