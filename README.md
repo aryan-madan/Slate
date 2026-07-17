@@ -23,6 +23,22 @@ Type a math expression into Slate and watch it calculate it and show the result.
 | `Ctrl` / `⌘` + `J` | Toggle theme |
 | `Ctrl` / `⌘` + `S` | Save (Markdown ↔ TXT) |
 
+## Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/aryan-madan/Slate.git
+
+# Enter the project directory
+cd slate
+
+# Install dependencies
+npm install
+
+# Start the development server
+npm run dev
+```
+
 ### AI Usage
 - stupid editor bugs with formatting
 - css
