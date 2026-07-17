@@ -1,25 +1,23 @@
-# Slate
-<img width="2908" height="1812" alt="Slate" src="https://github.com/user-attachments/assets/569a9b3a-2a2c-406d-b26c-da12aed478cb" />
-<br>
-A minimalist writing app focused on stripping the unnecessary parts of a text editor and focusing more on thought and creation. 
+![Banner](public/assets/og.png)
 
-I designed Slate with a 'less is more' philosophy, with over-engineered animations to make writing a more enjoyable experience.
+**Slate** is a minimalist writing app that focuses on stripping the unnecessary parts of a text editor and focuses more on thought and creation.
 
-Slate now includes a command palette that you can access by typing '/'.
-You get access to a variety of markdown styles such as headings, code snippets, lists, to-do's, etc.
+It's designed with a 'less is more' philosophy. Instead of a messy UI, it removes any and all visual clutter by reducing buttons, animations, and colors.
 
-```bash
-# Clone the repository
-git clone [https://github.com/yourusername/slate.git](https://github.com/yourusername/slate.git)
+## Command Palette
+Type '/' to access the markdown command palette and insert different styles such as headings, code snippets, lists, to-do's, etc.
 
-# Install dependencies
-npm install
+![Command Palette](public/gifs/palette.gif)
 
-# Run the development server
-npm run dev
-```
+## Live Math
+Type a math expression into Slate and watch it calculate it and show the result. You can replace the expression with the result by pressing 'enter'.
 
-Or, go to the [deployed link](https://slate-silk.vercel.app/) to experience Slate!
+![Math](public/gifs/math.gif)
 
-## AI Usage
-I used AI to fix bugs, and do some parts of the css.
+### AI Usage
+- stupid editor bugs with formatting
+- css
+- debugging
+- bug fixing
+
+Made with ❤️ by Ary
