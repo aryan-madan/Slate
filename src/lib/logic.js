@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { BLOCK_HTML, SLASH_ITEMS, MARKDOWN_MAP, EMPTY_NOTE_HTML } from './constants';
-import { getCleanText, matchMarkdownTrigger } from './utils';
+import { getCleanText, matchMarkdownTrigger, evaluateMathExpression } from './utils';
 
 export default function useEditor(cur, active, setItems) {
   const [isTyping, setIsTyping] = useState(false);
@@ -11,6 +11,11 @@ export default function useEditor(cur, active, setItems) {
   const [slashQuery, setSlashQuery] = useState('');
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashPos, setSlashPos] = useState({ x: 0, y: 0 });
+
+  const [mathOpen, setMathOpen] = useState(false);
+  const [mathPos, setMathPos] = useState({ x: 0, y: 0 });
+  const [mathResult, setMathResult] = useState(0);
+  const mathMatchRef = useRef(null);
 
   const editorRef = useRef(null);
   const syncTimeout = useRef(null);
@@ -31,6 +36,11 @@ export default function useEditor(cur, active, setItems) {
     setSlashQuery('');
     setSlashIndex(0);
     slashBlockRef.current = null;
+  }, []);
+
+  const closeMathPill = useCallback(() => {
+    setMathOpen(false);
+    mathMatchRef.current = null;
   }, []);
 
   function getCurrentBlock(node, offset) {
@@ -339,6 +349,7 @@ export default function useEditor(cur, active, setItems) {
 
     requestAnimationFrame(() => {
       closeSlashMenu();
+      closeMathPill();
       updateCursorPos();
     });
   });
@@ -347,7 +358,7 @@ export default function useEditor(cur, active, setItems) {
     const ctx = getCaretContext();
     if (!ctx) {
       closeSlashMenu();
-      return;
+      return false;
     }
 
     const match = ctx.textBefore.match(/\/([a-zA-Z0-9]*)$/);
@@ -365,9 +376,66 @@ export default function useEditor(cur, active, setItems) {
       setSlashQuery(match[1]);
       setSlashIndex(0);
       setSlashOpen(true);
-    } else {
-      closeSlashMenu();
+      return true;
     }
+
+    closeSlashMenu();
+    return false;
+  };
+
+  const checkMathExpression = () => {
+    const ctx = getCaretContext();
+    if (!ctx) {
+      closeMathPill();
+      return;
+    }
+
+    const textBefore = ctx.textBefore.replace(/\u00A0/g, '');
+    const match = textBefore.match(/(-?\d+(?:\.\d+)?(?:\s*[+\-*/]\s*-?\d+(?:\.\d+)?)+)$/);
+
+    if (!match) {
+      closeMathPill();
+      return;
+    }
+
+    const expr = match[1];
+    const rawResult = evaluateMathExpression(expr);
+    const result = Math.round(rawResult * 100) / 100;
+
+    const rect = getSelectionRect();
+    if (rect && editorRef.current) {
+      const editorRect = editorRef.current.getBoundingClientRect();
+      setMathPos({
+        x: rect.left - editorRect.left,
+        y: rect.top - editorRect.top - 38
+      });
+    }
+
+    mathMatchRef.current = {
+      holder: ctx.holder,
+      start: textBefore.length - expr.length,
+      end: textBefore.length
+    };
+    setMathResult(result);
+    setMathOpen(true);
+  };
+
+  const acceptMathResult = () => {
+    const m = mathMatchRef.current;
+    if (!m || !m.holder) return false;
+
+    const fullText = getCleanText(m.holder.innerHTML).replace(/\u00A0/g, '');
+    const before = fullText.slice(0, m.start);
+    const after = fullText.slice(m.end);
+    const replacement = String(mathResult);
+
+    writeBlockText(m.holder, before + replacement + after);
+    placeCursorAtTextOffset(m.holder, (before + replacement).length);
+
+    closeMathPill();
+    edit();
+    requestAnimationFrame(updateCursorPos);
+    return true;
   };
 
   const cleanupPlaceholder = () => {
@@ -415,7 +483,13 @@ export default function useEditor(cur, active, setItems) {
     }, 1000);
 
     updateCursorPos();
-    checkSlashCommand();
+
+    const hadSlash = checkSlashCommand();
+    if (!hadSlash) {
+      checkMathExpression();
+    } else {
+      closeMathPill();
+    }
   };
 
   const applySlashCommand = (item) => {
@@ -621,6 +695,18 @@ export default function useEditor(cur, active, setItems) {
   const handleKeyDown = (e) => {
     const isMod = e.metaKey || e.ctrlKey;
 
+    if (e.key === 'Escape' && mathOpen) {
+      e.preventDefault();
+      closeMathPill();
+      return;
+    }
+
+    if (e.key === 'Enter' && mathOpen && !slashOpen) {
+      e.preventDefault();
+      acceptMathResult();
+      return;
+    }
+
     if (e.key === ' ' && !slashOpen) {
       const handled = checkMarkdownShortcut(e);
       if (handled) return;
@@ -710,6 +796,10 @@ export default function useEditor(cur, active, setItems) {
     slashIndex,
     setSlashIndex,
     filteredSlashItems,
+    mathOpen,
+    mathPos,
+    mathResult,
+    acceptMathResult,
     edit,
     handleBeforeInput,
     handleKeyDown,

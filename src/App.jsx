@@ -12,6 +12,7 @@ import Topbar from './components/Topbar';
 import Slash from './components/Slash';
 import Editor from './components/Editor';
 import Save from './components/Save';
+import Math from './components/Math';
 
 export default function App() {
   const [items, setItems] = useLocal('items', [{ id: 1, body: '' }]);
@@ -47,6 +48,10 @@ export default function App() {
     slashIndex,
     setSlashIndex,
     filteredSlashItems,
+    mathOpen,
+    mathPos,
+    mathResult,
+    acceptMathResult,
     edit,
     handleBeforeInput,
     handleKeyDown,
@@ -108,6 +113,13 @@ export default function App() {
               slashIndex={slashIndex}
               setSlashIndex={setSlashIndex}
               onSelect={applySlashCommand}
+            />
+
+            <Math
+              open={mathOpen}
+              pos={mathPos}
+              result={mathResult}
+              onAccept={acceptMathResult}
             />
           </div>
         </div>

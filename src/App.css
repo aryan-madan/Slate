@@ -589,3 +589,25 @@ textarea::-webkit-scrollbar {
   opacity: 0.8;
   border-color: color-mix(in srgb, var(--fg) 15%, transparent);
 }
+
+@keyframes math-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.85) translateY(2px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.03) translateY(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-math-pop {
+  animation: math-pop 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: left center;
+}
