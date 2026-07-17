@@ -1,11 +1,39 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { IconPlus, IconX } from '@tabler/icons-react';
 import { getCleanText } from '../lib/utils';
 
 export default function Sidebar({ items, active, setActive, setItems, show, setShow }) {
+    const [editingId, setEditingId] = useState(null);
+    const [draftTitle, setDraftTitle] = useState('');
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        if (editingId !== null) {
+            inputRef.current?.focus();
+            inputRef.current?.select();
+        }
+    }, [editingId]);
+
+    const startEditing = (item) => {
+        setEditingId(item.id);
+        setDraftTitle(item.title ?? getCleanText(item.body).split('\n')[0] ?? '');
+    };
+
+    const commitTitle = () => {
+        const trimmed = draftTitle.trim();
+        setItems(items.map(item =>
+            item.id === editingId ? { ...item, title: trimmed || undefined } : item
+        ));
+        setEditingId(null);
+    };
+
+    const cancelEditing = () => setEditingId(null);
+
     return (
         <>
-            <div onMouseEnter={() => setShow(true)} className="fixed inset-y-0 left-0 w-20 z-40" />
+            {!show && (
+                <div onMouseEnter={() => setShow(true)} className="fixed inset-y-0 left-0 w-20 z-40" />
+            )}
 
             <aside
                 onMouseLeave={() => setShow(false)}
@@ -25,11 +53,30 @@ export default function Sidebar({ items, active, setActive, setItems, show, setS
                     <nav className="flex flex-col w-full overflow-y-auto no-scrollbar pb-10">
                         {(items || []).map((i) => (
                             <div key={i.id} className="group relative w-full">
-                                <button onClick={() => setActive(i.id)} className={`w-full text-left pl-4 pr-12 py-3 rounded-xl text-sm transition-all ${active === i.id ? 'bg-white/5 opacity-100 font-medium' : 'opacity-25 hover:opacity-60'}`}>
-                                    <span className="truncate block lowercase tracking-tight">
-                                        {getCleanText(i.body).split('\n')[0] || 'untitled'}
-                                    </span>
-                                </button>
+                                {editingId === i.id ? (
+                                    <input
+                                        ref={inputRef}
+                                        value={draftTitle}
+                                        onChange={(e) => setDraftTitle(e.target.value)}
+                                        onBlur={commitTitle}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') commitTitle();
+                                            if (e.key === 'Escape') cancelEditing();
+                                        }}
+                                        style={{ outline: 'none', boxShadow: 'none' }}
+                                        className="w-full text-left pl-4 pr-12 py-3 rounded-xl text-sm bg-white/5 border-0 outline-none focus:outline-none appearance-none lowercase tracking-tight font-medium text-[var(--fg)]"
+                                    />
+                                ) : (
+                                    <button
+                                        onClick={() => setActive(i.id)}
+                                        onDoubleClick={() => startEditing(i)}
+                                        className={`w-full text-left pl-4 pr-12 py-3 rounded-xl text-sm transition-all ${active === i.id ? 'bg-white/5 opacity-100 font-medium' : 'opacity-25 hover:opacity-60'}`}
+                                    >
+                                        <span className="truncate block lowercase tracking-tight">
+                                            {i.title || getCleanText(i.body).split('\n')[0] || 'untitled'}
+                                        </span>
+                                    </button>
+                                )}
                                 <button onClick={(e) => {
                                     e.stopPropagation();
                                     if (items.length > 1) {
