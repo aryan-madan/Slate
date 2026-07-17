@@ -190,6 +190,17 @@ export default function useEditor(cur, active, setItems) {
   };
 
   const templateForClass = (cls) => {
+    if (cls.includes('heading-1')) return BLOCK_HTML.h1;
+    if (cls.includes('heading-2')) return BLOCK_HTML.h2;
+    if (cls.includes('quote-block')) return BLOCK_HTML.quote;
+    if (cls.includes('code-block')) return BLOCK_HTML.code;
+    if (cls.includes('todo-item')) return BLOCK_HTML.todo;
+    if (cls.includes('bullet-item')) return BLOCK_HTML.bullet;
+    if (cls.includes('numbered-item')) return BLOCK_HTML.numbered;
+    return BLOCK_HTML.text;
+  };
+
+  const nextTemplateForClass = (cls) => {
     if (cls.includes('todo-item')) return BLOCK_HTML.todo;
     if (cls.includes('bullet-item')) return BLOCK_HTML.bullet;
     if (cls.includes('numbered-item')) return BLOCK_HTML.numbered;
@@ -515,9 +526,8 @@ export default function useEditor(cur, active, setItems) {
       return;
     }
 
-    const template = templateForClass(cls);
-    const current = spawnBlock(template, beforeText);
-    const next = spawnBlock(template, afterText);
+    const current = spawnBlock(templateForClass(cls), beforeText);
+    const next = spawnBlock(nextTemplateForClass(cls), afterText);
 
     block.replaceWith(...current.nodes, ...next.nodes);
     placeCursor(next.holder, true);
