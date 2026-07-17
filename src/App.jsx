@@ -17,7 +17,10 @@ export default function App() {
   const [items, setItems] = useLocal('items', [{ id: 1, body: '' }]);
   const [active, setActive] = useState(() => {
     const saved = window.localStorage.getItem('active');
-    return saved ? JSON.parse(saved) : 1;
+    const savedId = saved ? JSON.parse(saved) : null;
+    const initialItems = Array.isArray(items) ? items : [];
+    if (savedId && initialItems.some(item => item.id === savedId)) return savedId;
+    return initialItems[0]?.id ?? 1;
   });
   const [show, setShow] = useState(false);
   const [saveOpen, setSaveOpen] = useState(false);
@@ -32,12 +35,6 @@ export default function App() {
     window.localStorage.setItem('active', JSON.stringify(active));
   }, [active]);
 
-  useEffect(() => {
-    if (Array.isArray(items) && !items.find(i => i.id === active) && items.length > 0) {
-      setActive(items[0].id);
-    }
-  }, [items, active]);
-
   const wordCount = getCleanText(cur.body).trim() ? getCleanText(cur.body).trim().split(/\s+/).length : 0;
 
   const {
@@ -51,10 +48,11 @@ export default function App() {
     setSlashIndex,
     filteredSlashItems,
     edit,
+    handleBeforeInput,
     handleKeyDown,
     handleEditorClick,
     updateCursorPos,
-    applySlashCommandRef
+    applySlashCommand
   } = useEditor(cur, active, setItems);
 
   const handleExport = (format) => {
@@ -96,6 +94,7 @@ export default function App() {
               cursorHeight={cursorHeight}
               curve={curve}
               onInput={edit}
+              onBeforeInput={handleBeforeInput}
               onKeyDown={handleKeyDown}
               onMouseUp={updateCursorPos}
               onKeyUp={updateCursorPos}
@@ -108,7 +107,7 @@ export default function App() {
               filteredSlashItems={filteredSlashItems}
               slashIndex={slashIndex}
               setSlashIndex={setSlashIndex}
-              onSelect={(item) => applySlashCommandRef.current(item)}
+              onSelect={applySlashCommand}
             />
           </div>
         </div>

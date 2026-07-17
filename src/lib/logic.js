@@ -15,6 +15,8 @@ export default function useEditor(cur, active, setItems) {
   const editorRef = useRef(null);
   const syncTimeout = useRef(null);
   const typingTimeout = useRef(null);
+  const slashBlockRef = useRef(null);
+  const loadedActiveRef = useRef(null);
 
   const filteredSlashItems = useMemo(() => {
     if (!slashQuery) return SLASH_ITEMS;
@@ -28,52 +30,93 @@ export default function useEditor(cur, active, setItems) {
     setSlashOpen(false);
     setSlashQuery('');
     setSlashIndex(0);
+    slashBlockRef.current = null;
   }, []);
 
-  const updateCursorPos = useCallback(() => {
+  function getCurrentBlock(node, offset) {
+    if (!node || !editorRef.current) return null;
+
+    if (node === editorRef.current) {
+      const children = editorRef.current.children;
+      if (!children || children.length === 0) return null;
+      const idx = typeof offset === 'number'
+        ? Math.max(0, Math.min(offset, children.length - 1))
+        : children.length - 1;
+      return children[idx] || children[children.length - 1];
+    }
+
+    let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    if (!el) return null;
+    if (el === editorRef.current) return null;
+
+    while (el && el.parentElement !== editorRef.current) {
+      el = el.parentElement;
+    }
+    return el;
+  }
+
+  function holderOf(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return node;
+    const holder = node.querySelector('[class$="-text"], [class*="-text "]');
+    return holder || node;
+  }
+
+  const getSelectionRect = useCallback(() => {
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || !editorRef.current) return;
+    if (!selection || selection.rangeCount === 0 || !editorRef.current) return null;
 
     const rawRange = selection.getRangeAt(0);
     if (!editorRef.current.contains(rawRange.startContainer) || !editorRef.current.contains(rawRange.endContainer)) {
-      return;
+      return null;
     }
 
     const range = rawRange.cloneRange();
-    let rect;
+    const rects = range.getClientRects();
+    let rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
 
-    if (range.collapsed) {
-      const dummy = document.createElement("span");
-      dummy.textContent = "\u200b";
-      range.insertNode(dummy);
-      rect = dummy.getBoundingClientRect();
-      const parent = dummy.parentNode;
-      if (parent) {
-        parent.removeChild(dummy);
-        parent.normalize();
-      }
-    } else {
-      rect = range.getBoundingClientRect();
+    if (!rect || (rect.top === 0 && rect.left === 0 && rect.width === 0 && rect.height === 0)) {
+      const block = getCurrentBlock(rawRange.startContainer, rawRange.startOffset);
+      const holder = holderOf(block);
+      if (!holder || !holder.getBoundingClientRect) return null;
+
+      const holderRect = holder.getBoundingClientRect();
+      const styles = window.getComputedStyle(holder);
+      const lineHeight = Number.parseFloat(styles.lineHeight) || Number.parseFloat(styles.fontSize) || 24;
+      rect = {
+        left: holderRect.left,
+        right: holderRect.left,
+        top: holderRect.top,
+        bottom: holderRect.top + lineHeight,
+        width: 0,
+        height: lineHeight
+      };
     }
 
-    if (rect && !(rect.top === 0 && rect.left === 0 && rect.width === 0 && rect.height === 0)) {
-      const editorRect = editorRef.current.getBoundingClientRect();
-
-      setCursorPos({
-        x: rect.left - editorRect.left,
-        y: rect.top - editorRect.top
-      });
-
-      if (rect.height > 0) {
-        setCursorHeight(rect.height);
-      }
-
-      setSlashPos({
-        x: rect.left - editorRect.left,
-        y: rect.top - editorRect.top + rect.height + 6
-      });
-    }
+    return rect;
   }, []);
+
+  const updateCursorPos = useCallback(() => {
+    if (!editorRef.current) return;
+
+    const rect = getSelectionRect();
+    if (!rect) return;
+
+    const editorRect = editorRef.current.getBoundingClientRect();
+
+    setCursorPos({
+      x: rect.left - editorRect.left,
+      y: rect.top - editorRect.top
+    });
+
+    if (rect.height > 0) {
+      setCursorHeight(rect.height);
+    }
+
+    setSlashPos({
+      x: rect.left - editorRect.left,
+      y: rect.top - editorRect.top + rect.height + 6
+    });
+  }, [getSelectionRect]);
 
   useEffect(() => {
     const resync = () => {
@@ -99,32 +142,122 @@ export default function useEditor(cur, active, setItems) {
     sel.addRange(range);
   };
 
-  const getCurrentBlock = (node, offset) => {
-    if (!node || !editorRef.current) return null;
+  const placeCursorAtTextOffset = (el, offset) => {
+    if (!el) return;
 
-    if (node === editorRef.current) {
-      const children = editorRef.current.children;
-      if (!children || children.length === 0) return null;
-      const idx = typeof offset === 'number'
-        ? Math.max(0, Math.min(offset, children.length - 1))
-        : children.length - 1;
-      return children[idx] || children[children.length - 1];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    let node = walker.nextNode();
+    let remaining = Math.max(0, offset);
+
+    while (node) {
+      if (remaining <= node.textContent.length) {
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.setStart(node, remaining);
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
+
+      remaining -= node.textContent.length;
+      node = walker.nextNode();
     }
 
-    let el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    if (!el) return null;
-    if (el === editorRef.current) return null;
-
-    while (el && el.parentElement !== editorRef.current) {
-      el = el.parentElement;
-    }
-    return el;
+    placeCursor(el, false);
   };
 
   const buildNodes = (html) => {
     const temp = document.createElement('div');
     temp.innerHTML = html;
     return Array.from(temp.childNodes);
+  };
+
+  const readBlockText = (block) => getCleanText(holderOf(block).innerHTML).replace(/\u00A0/g, '');
+
+  const writeBlockText = (holder, text) => {
+    holder.textContent = text || '\u00A0';
+  };
+
+  const spawnBlock = (templateHtml, text) => {
+    const nodes = buildNodes(templateHtml);
+    const target = nodes[nodes.length - 1];
+    const holder = holderOf(target);
+    if (holder && holder.nodeType === Node.ELEMENT_NODE) {
+      writeBlockText(holder, text);
+    }
+    return { nodes, target, holder };
+  };
+
+  const templateForClass = (cls) => {
+    if (cls.includes('todo-item')) return BLOCK_HTML.todo;
+    if (cls.includes('bullet-item')) return BLOCK_HTML.bullet;
+    if (cls.includes('numbered-item')) return BLOCK_HTML.numbered;
+    return BLOCK_HTML.text;
+  };
+
+  const isEditorBlock = (node) => (
+    node.nodeType === Node.ELEMENT_NODE && (
+      node.tagName === 'HR' ||
+      node.classList.contains('text-block') ||
+      node.classList.contains('todo-item') ||
+      node.classList.contains('heading-1') ||
+      node.classList.contains('heading-2') ||
+      node.classList.contains('bullet-item') ||
+      node.classList.contains('numbered-item') ||
+      node.classList.contains('quote-block') ||
+      node.classList.contains('code-block')
+    )
+  );
+
+  const normalizeEditorRoot = () => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    if (editor.childNodes.length === 0) {
+      const seeded = spawnBlock(BLOCK_HTML.text, '');
+      editor.append(...seeded.nodes);
+      placeCursor(seeded.holder, false);
+      return;
+    }
+
+    const selection = window.getSelection();
+    const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+    const selectedNode = range && range.collapsed ? range.startContainer : null;
+    const selectedOffset = range && range.collapsed ? range.startOffset : 0;
+    let selectedWrapper = null;
+    let selectedTextOffset = 0;
+    let currentWrapper = null;
+
+    Array.from(editor.childNodes).forEach((node) => {
+      if (isEditorBlock(node)) {
+        currentWrapper = null;
+        return;
+      }
+
+      if (!currentWrapper) {
+        currentWrapper = document.createElement('div');
+        currentWrapper.className = 'text-block';
+        editor.insertBefore(currentWrapper, node);
+      }
+
+      if (node === selectedNode) {
+        selectedWrapper = currentWrapper;
+        selectedTextOffset = selectedOffset;
+      }
+
+      currentWrapper.appendChild(node);
+    });
+
+    Array.from(editor.querySelectorAll('.text-block')).forEach((block) => {
+      if (block.textContent.replace(/\u00A0/g, '') === '') {
+        writeBlockText(block, '');
+      }
+    });
+
+    if (selectedWrapper) {
+      placeCursorAtTextOffset(selectedWrapper, selectedTextOffset);
+    }
   };
 
   const resolveBlock = () => {
@@ -134,61 +267,97 @@ export default function useEditor(cur, active, setItems) {
     let block = getCurrentBlock(range.startContainer, range.startOffset);
     if (!block) block = editorRef.current.lastElementChild;
     if (!block) {
-      const seedNodes = buildNodes(BLOCK_HTML.text);
-      editorRef.current.append(...seedNodes);
-      block = seedNodes[0];
+      const seeded = spawnBlock(BLOCK_HTML.text, '');
+      editorRef.current.append(...seeded.nodes);
+      block = seeded.nodes[0];
     }
     return block;
   };
 
-  useEffect(() => {
-    if (editorRef.current) {
-      const content = cur.body && cur.body.trim() !== '' ? cur.body : EMPTY_NOTE_HTML;
-      if (editorRef.current.innerHTML !== content) {
-        editorRef.current.innerHTML = content;
-      }
-
-      editorRef.current.focus();
-
-      const lastChild = editorRef.current.lastElementChild;
-      const target = lastChild ? (lastChild.querySelector('.todo-text, .bullet-text, .numbered-text') || lastChild) : editorRef.current;
-      placeCursor(target, false);
-
-      closeSlashMenu();
-      requestAnimationFrame(updateCursorPos);
-    }
-  }, [active, updateCursorPos, closeSlashMenu]);
-
-  const checkSlashCommand = useCallback(() => {
+  const getCaretContext = () => {
     const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) {
-      closeSlashMenu();
-      return;
-    }
-
+    if (!selection || selection.rangeCount === 0) return null;
     const range = selection.getRangeAt(0);
-    if (!range.collapsed) {
-      closeSlashMenu();
-      return;
-    }
+    if (!range.collapsed) return null;
+    if (!editorRef.current || !editorRef.current.contains(range.startContainer)) return null;
+
+    const block = getCurrentBlock(range.startContainer, range.startOffset);
+    if (!block) return null;
+
+    const holder = holderOf(block);
+    if (!holder) return null;
 
     const node = range.startContainer;
-    if (node.nodeType !== Node.TEXT_NODE) {
+
+    if (node === holder || holder.contains(node)) {
+      const preRange = document.createRange();
+      preRange.selectNodeContents(holder);
+      preRange.setEnd(node, range.startOffset);
+
+      const postRange = document.createRange();
+      postRange.selectNodeContents(holder);
+      postRange.setStart(node, range.startOffset);
+
+      return {
+        block,
+        holder,
+        range,
+        textBefore: preRange.toString(),
+        textAfter: postRange.toString()
+      };
+    }
+
+    return { block, holder, range, textBefore: '', textAfter: '' };
+  };
+
+  useEffect(() => {
+    if (!editorRef.current || loadedActiveRef.current === active) return;
+
+    loadedActiveRef.current = active;
+
+    const content = cur.body && cur.body.trim() !== '' ? cur.body : EMPTY_NOTE_HTML;
+    if (editorRef.current.innerHTML !== content) {
+      editorRef.current.innerHTML = content;
+    }
+
+    editorRef.current.focus();
+
+    const lastChild = editorRef.current.lastElementChild;
+    const target = lastChild ? holderOf(lastChild) : editorRef.current;
+    placeCursor(target, false);
+
+    requestAnimationFrame(() => {
+      closeSlashMenu();
+      updateCursorPos();
+    });
+  });
+
+  const checkSlashCommand = () => {
+    const ctx = getCaretContext();
+    if (!ctx) {
       closeSlashMenu();
       return;
     }
 
-    const textBefore = node.textContent.slice(0, range.startOffset);
-    const match = textBefore.match(/\/([a-zA-Z0-9]*)$/);
+    const match = ctx.textBefore.match(/\/([a-zA-Z0-9]*)$/);
 
     if (match) {
+      const rect = getSelectionRect();
+      if (rect && editorRef.current) {
+        const editorRect = editorRef.current.getBoundingClientRect();
+        setSlashPos({
+          x: rect.left - editorRect.left,
+          y: rect.top - editorRect.top + rect.height + 6
+        });
+      }
+      slashBlockRef.current = ctx.block;
       setSlashQuery(match[1]);
       setSlashIndex(0);
       setSlashOpen(true);
     } else {
       closeSlashMenu();
     }
-  }, [closeSlashMenu]);
+  };
 
   const cleanupPlaceholder = () => {
     const selection = window.getSelection();
@@ -221,6 +390,7 @@ export default function useEditor(cur, active, setItems) {
 
   const edit = () => {
     if (!editorRef.current) return;
+    normalizeEditorRoot();
     cleanupPlaceholder();
     const val = editorRef.current.innerHTML;
 
@@ -240,97 +410,68 @@ export default function useEditor(cur, active, setItems) {
   const applySlashCommand = (item) => {
     if (!item || !editorRef.current) return;
 
-    const block = resolveBlock();
+    let block = slashBlockRef.current;
+    if (!block || !block.isConnected || !editorRef.current.contains(block)) {
+      block = resolveBlock();
+    }
     if (!block) return;
 
-    const rawText = getCleanText(block.innerHTML);
-    const slashIdx = rawText.lastIndexOf('/');
-    const remainingText = (slashIdx !== -1 ? rawText.slice(0, slashIdx) : rawText).trim();
+    const ctx = getCaretContext();
+    let beforeSlash = '';
+    let afterSlash = '';
 
-    const newNodes = buildNodes(item.html);
-    block.replaceWith(...newNodes);
-
-    const target = newNodes[newNodes.length - 1];
-    const textHolder = target.querySelector
-      ? (target.querySelector('.todo-text, .bullet-text, .numbered-text') || target)
-      : target;
-
-    if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
-      setHolderText(textHolder, remainingText);
-      placeCursor(textHolder, false);
+    if (ctx && ctx.block === block) {
+      beforeSlash = ctx.textBefore.replace(/\/[a-zA-Z0-9]*$/, '').replace(/\u00A0/g, '');
+      afterSlash = ctx.textAfter.replace(/\u00A0/g, '');
+    } else {
+      const rawText = readBlockText(block);
+      const slashIdx = rawText.lastIndexOf('/');
+      beforeSlash = slashIdx !== -1 ? rawText.slice(0, slashIdx) : rawText;
     }
 
+    const remainingText = beforeSlash + afterSlash;
+
+    const { nodes, holder } = spawnBlock(item.html, remainingText);
+    block.replaceWith(...nodes);
+
     closeSlashMenu();
-    edit();
     editorRef.current.focus();
+
+    if (holder && holder.nodeType === Node.ELEMENT_NODE) {
+      if (remainingText.length === 0) {
+        placeCursor(holder, false);
+      } else {
+        placeCursorAtTextOffset(holder, beforeSlash.length);
+      }
+    }
+
+    edit();
     requestAnimationFrame(updateCursorPos);
   };
 
   const checkMarkdownShortcut = (e) => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return false;
-    const range = selection.getRangeAt(0);
-    if (!range.collapsed) return false;
+    const ctx = getCaretContext();
+    if (!ctx) return false;
+    if (!ctx.block.classList.contains('text-block')) return false;
 
-    const node = range.startContainer;
-    if (node.nodeType !== Node.TEXT_NODE) return false;
-
-    const block = getCurrentBlock(node, range.startOffset);
-    if (!block || !block.classList.contains('text-block')) return false;
-
-    const preRange = document.createRange();
-    preRange.selectNodeContents(block);
-    preRange.setEnd(range.startContainer, range.startOffset);
-    const textBefore = preRange.toString();
-
-    const cleaned = textBefore.replace(/\u00A0/g, '').trim();
+    const cleaned = ctx.textBefore.replace(/\u00A0/g, '').trim();
     const matchedType = matchMarkdownTrigger(cleaned);
     if (!matchedType) return false;
 
     e.preventDefault();
 
-    const postRange = document.createRange();
-    postRange.selectNodeContents(block);
-    postRange.setStart(range.startContainer, range.startOffset);
-    const remaining = postRange.toString().replace(/\u00A0/g, '');
+    const remaining = ctx.textAfter.replace(/\u00A0/g, '');
 
-    const newNodes = buildNodes(MARKDOWN_MAP[matchedType]);
-    block.replaceWith(...newNodes);
+    const { nodes, holder } = spawnBlock(MARKDOWN_MAP[matchedType], remaining);
+    ctx.block.replaceWith(...nodes);
 
-    const target = newNodes[newNodes.length - 1];
-    const textHolder = target.querySelector
-      ? (target.querySelector('.todo-text, .bullet-text, .numbered-text') || target)
-      : target;
-
-    if (textHolder && textHolder.nodeType === Node.ELEMENT_NODE) {
-      setHolderText(textHolder, remaining);
-      placeCursor(textHolder, false);
+    if (holder && holder.nodeType === Node.ELEMENT_NODE) {
+      placeCursor(holder, remaining.length > 0);
     }
 
     edit();
     requestAnimationFrame(updateCursorPos);
     return true;
-  };
-
-  const templateForClass = (cls) => {
-    if (cls.includes('todo-item')) return BLOCK_HTML.todo;
-    if (cls.includes('bullet-item')) return BLOCK_HTML.bullet;
-    if (cls.includes('numbered-item')) return BLOCK_HTML.numbered;
-    return BLOCK_HTML.text;
-  };
-
-  const holderOf = (node) => (
-    node.querySelector
-      ? (node.querySelector('.todo-text, .bullet-text, .numbered-text') || node)
-      : node
-  );
-
-  const setHolderText = (holder, text) => {
-    if (text) {
-      holder.textContent = text;
-    } else {
-      holder.innerHTML = '<br>';
-    }
   };
 
   const handleEnterKey = () => {
@@ -342,9 +483,9 @@ export default function useEditor(cur, active, setItems) {
     if (!block) block = editorRef.current.lastElementChild;
 
     if (!block) {
-      const seedNodes = buildNodes(BLOCK_HTML.text);
-      editorRef.current.append(...seedNodes);
-      placeCursor(seedNodes[0], false);
+      const seeded = spawnBlock(BLOCK_HTML.text, '');
+      editorRef.current.append(...seeded.nodes);
+      placeCursor(seeded.holder, false);
       edit();
       requestAnimationFrame(updateCursorPos);
       return;
@@ -366,27 +507,20 @@ export default function useEditor(cur, active, setItems) {
     const isEmpty = beforeText.trim() === '' && afterText.trim() === '';
 
     if (/todo-item|bullet-item|numbered-item/.test(cls) && isEmpty) {
-      const emptyNodes = buildNodes(BLOCK_HTML.text);
-      block.replaceWith(...emptyNodes);
-      placeCursor(emptyNodes[0], false);
+      const emptied = spawnBlock(BLOCK_HTML.text, '');
+      block.replaceWith(...emptied.nodes);
+      placeCursor(emptied.holder, false);
       edit();
       requestAnimationFrame(updateCursorPos);
       return;
     }
 
-    const currentTemplate = templateForClass(cls);
-    const currentNodes = buildNodes(currentTemplate);
-    const currentTarget = currentNodes[currentNodes.length - 1];
-    setHolderText(holderOf(currentTarget), beforeText);
+    const template = templateForClass(cls);
+    const current = spawnBlock(template, beforeText);
+    const next = spawnBlock(template, afterText);
 
-    const nextTemplate = templateForClass(cls);
-    const nextNodes = buildNodes(nextTemplate);
-    const nextTarget = nextNodes[nextNodes.length - 1];
-    const nextHolder = holderOf(nextTarget);
-    setHolderText(nextHolder, afterText);
-
-    block.replaceWith(...currentNodes, ...nextNodes);
-    placeCursor(nextHolder, true);
+    block.replaceWith(...current.nodes, ...next.nodes);
+    placeCursor(next.holder, true);
 
     edit();
     requestAnimationFrame(updateCursorPos);
@@ -396,23 +530,27 @@ export default function useEditor(cur, active, setItems) {
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return false;
     const range = selection.getRangeAt(0);
-    if (!range.collapsed || range.startOffset !== 0) return false;
+    if (!range.collapsed) return false;
 
     const block = getCurrentBlock(range.startContainer, range.startOffset);
     if (!block) return false;
 
     const holder = holderOf(block);
-    if (range.startContainer !== holder && range.startContainer.parentElement !== holder) return false;
+    if (range.startContainer !== holder && !holder.contains(range.startContainer)) return false;
+
+    const preRange = document.createRange();
+    preRange.selectNodeContents(holder);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    if (preRange.toString().replace(/\u00A0/g, '').length !== 0) return false;
 
     const cls = block.className || '';
-    const currentText = getCleanText(holder.innerHTML).replace(/\u00A0/g, '');
+    const currentText = readBlockText(block);
     const isSpecial = /todo-item|bullet-item|numbered-item|heading-1|heading-2|quote-block|code-block/.test(cls);
 
     if (isSpecial) {
-      const newNodes = buildNodes(BLOCK_HTML.text);
-      setHolderText(newNodes[0], currentText);
-      block.replaceWith(...newNodes);
-      placeCursor(newNodes[0], true);
+      const converted = spawnBlock(BLOCK_HTML.text, currentText);
+      block.replaceWith(...converted.nodes);
+      placeCursor(converted.holder, true);
       edit();
       requestAnimationFrame(updateCursorPos);
       return true;
@@ -429,10 +567,10 @@ export default function useEditor(cur, active, setItems) {
     }
 
     const prevHolder = holderOf(prevBlock);
-    const prevText = getCleanText(prevHolder.innerHTML).replace(/\u00A0/g, '');
+    const prevText = readBlockText(prevBlock);
     const mergedText = prevText + currentText;
 
-    setHolderText(prevHolder, mergedText);
+    writeBlockText(prevHolder, mergedText);
     block.remove();
 
     const mergeRange = document.createRange();
@@ -451,9 +589,6 @@ export default function useEditor(cur, active, setItems) {
     requestAnimationFrame(updateCursorPos);
     return true;
   };
-
-  const applySlashCommandRef = useRef(applySlashCommand);
-  applySlashCommandRef.current = applySlashCommand;
 
   const handleEditorClick = (e) => {
     if (e.target && e.target.classList && e.target.classList.contains('todo-checkbox')) {
@@ -549,6 +684,12 @@ export default function useEditor(cur, active, setItems) {
     setTimeout(updateCursorPos, 0);
   };
 
+  const handleBeforeInput = (e) => {
+    if (e.data === ' ' && !slashOpen) {
+      checkMarkdownShortcut(e);
+    }
+  };
+
   return {
     editorRef,
     cursorPos,
@@ -560,9 +701,10 @@ export default function useEditor(cur, active, setItems) {
     setSlashIndex,
     filteredSlashItems,
     edit,
+    handleBeforeInput,
     handleKeyDown,
     handleEditorClick,
     updateCursorPos,
-    applySlashCommandRef
+    applySlashCommand
   };
 }

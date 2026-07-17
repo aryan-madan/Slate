@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Editor({ editorRef, cursorPos, cursorHeight, curve, onInput, onKeyDown, onMouseUp, onKeyUp, onClick }) {
+export default function Editor({ editorRef, cursorPos, cursorHeight, curve, onInput, onBeforeInput, onKeyDown, onMouseUp, onKeyUp, onClick }) {
     return (
         <>
             <div
@@ -17,6 +17,7 @@ export default function Editor({ editorRef, cursorPos, cursorHeight, curve, onIn
                 ref={editorRef}
                 contentEditable
                 onInput={onInput}
+                onBeforeInput={onBeforeInput}
                 onKeyDown={onKeyDown}
                 onMouseUp={onMouseUp}
                 onKeyUp={onKeyUp}

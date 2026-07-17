@@ -4,7 +4,7 @@ export default function Slash({ slashOpen, slashPos, filteredSlashItems, slashIn
     if (!slashOpen) return null;
 
     return (
-        <div className="slash-menu" style={{ left: slashPos.x, top: slashPos.y }}>
+        <div className="slash-menu" style={{ left: slashPos.x, top: slashPos.y, zIndex: 999 }}>
             {filteredSlashItems.length === 0 && (
                 <div className="slash-menu-empty">no matches</div>
             )}
