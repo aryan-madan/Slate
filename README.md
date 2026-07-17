@@ -2,6 +2,8 @@
 
 **Slate** is a minimalist writing app that focuses on stripping the unnecessary parts of a text editor and focuses more on thought and creation.
 
+![Slate UI](public/screenshots/Slate.png)
+
 It's designed with a 'less is more' philosophy. Instead of a messy UI, it removes any and all visual clutter by reducing buttons, animations, and colors.
 
 ## Command Palette
